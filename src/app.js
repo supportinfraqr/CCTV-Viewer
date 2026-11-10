@@ -1,6 +1,6 @@
 const API = 'http://127.0.0.1:8765';
 const STORAGE_KEY = 'cctv-viewer.config.v1';
-const DEFAULT = { layout: 4, cameras: [], focus: null };
+const DEFAULT = { layout: 4, cameras: [], focus: null, fitMode: 'contain' };
 
 function load() {
   try {
@@ -228,6 +228,7 @@ function openTileMenu(index, tile) {
   menu.append(el('div', { class: 'tile-menu-actions' },
     el('button', { class: 'menu-action', type: 'button', text: 'Edit camera', onclick: () => { closeTileMenu(); openModal(index); } }),
     el('button', { class: 'menu-action', type: 'button', text: state.focus === index ? 'Back to grid' : 'Maximize camera', onclick: () => { closeTileMenu(); state.focus = state.focus === index ? null : index; save(); render(); } }),
+    el('button', { class: 'menu-action', type: 'button', text: state.fitMode === 'fill' ? 'Fit full camera view' : 'Fill the tile', onclick: () => { closeTileMenu(); state.fitMode = state.fitMode === 'fill' ? 'contain' : 'fill'; save(); render(); } }),
     el('button', { class: 'menu-action danger', type: 'button', text: 'Remove camera', onclick: () => { closeTileMenu(); void deleteCamera(index); } }),
   ));
   tile.append(menu);
@@ -247,7 +248,7 @@ function render() {
     ? `${count} camera${count === 1 ? '' : 's'} configured · showing ${state.focus != null ? 1 : Math.min(state.layout, count)}`
     : 'No cameras configured';
   const indices = visibleIndices();
-  grid.className = `camera-grid ${indices.length === 1 ? 'single' : indices.length === 2 ? 'two' : indices.length === 3 ? 'three' : indices.length <= 4 ? 'four' : 'six'}`;
+  grid.className = `camera-grid ${indices.length === 1 ? 'single' : indices.length === 2 ? 'two' : indices.length === 3 ? 'three' : indices.length <= 4 ? 'four' : 'six'} ${state.fitMode === 'fill' ? 'fill-mode' : 'fit-mode'}`;
   grid.replaceChildren();
   if (!count) {
     const icon = el('div', { class: 'empty-icon' });
