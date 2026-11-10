@@ -176,12 +176,15 @@ function tileFor(index) {
     if (openMenuIndex === index) closeTileMenu();
     else openTileMenu(index, tile);
   });
+  const back = state.focus === index
+    ? el('button', { class: 'tile-back', type: 'button', text: 'Back to grid', onclick: event => { event.stopPropagation(); state.focus = null; save(); render(); } })
+    : null;
   tile.append(el('div', { class: 'tile-head' },
     el('div', { class: 'tile-name min-w-0' },
       el('span', { class: 'stream-dot' }),
       el('span', { class: 'tile-title', text: camera ? name(camera) : `Camera ${index + 1}` }),
     ),
-    more,
+    el('div', { class: 'tile-actions' }, back, more),
   ));
   if (hasUrl) {
     const image = el('img', {
@@ -242,6 +245,7 @@ function name(camera) {
 
 function render() {
   closeTileMenu();
+  document.body.classList.toggle('focus-mode', state.focus != null);
   renderLayoutButtons();
   const count = state.cameras.length;
   summary.textContent = count
