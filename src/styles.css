@@ -105,16 +105,11 @@ button, input { font: inherit; }
 .segmented button.active { background: white; color: var(--text); box-shadow: 0 3px 8px -5px rgba(15,23,42,.4); }
 .muted { color: var(--muted); font-size: 11.5px; }
 .camera-grid {
-  flex: 1; min-height: 0; display: grid; gap: 10px;
-  grid-template-columns: repeat(var(--cols, 2), var(--tile-w, minmax(0, 1fr)));
-  grid-auto-rows: var(--tile-h, minmax(0, 1fr));
-  justify-content: center; align-content: center;
+  flex: 1; min-height: 0; display: flex; flex-direction: column;
+  gap: 10px; justify-content: center; align-items: center; overflow: hidden;
 }
-.camera-grid.single { --cols: 1; }
-.camera-grid.two { --cols: 2; }
-.camera-grid.three { --cols: 3; }
-.camera-grid.four { --cols: 2; }
-.camera-grid.six { --cols: 3; }
+.tile-row { display: flex; gap: 10px; justify-content: center; align-items: center; min-width: 0; }
+.camera-tile { flex: 0 0 auto; }
 .camera-tile {
   position: relative; overflow: hidden; background: #0a101a;
   border: 1px solid #26364f; border-radius: 17px;
@@ -204,9 +199,8 @@ body.focus-mode .topbar,
 body.focus-mode .toolbar,
 body.focus-mode .footer { display: none; }
 body.focus-mode .workspace { padding: 0; gap: 0; }
-body.focus-mode .camera-grid {
-  gap: 0; grid-template-columns: 1fr; grid-template-rows: 1fr; grid-auto-rows: 1fr;
-}
+body.focus-mode .camera-grid { gap: 0; align-items: stretch; }
+body.focus-mode .camera-tile { flex: 1 1 auto; width: 100% !important; height: 100% !important; }
 body.focus-mode .camera-tile { border: 0; border-radius: 0; box-shadow: none; }
 body.focus-mode .camera-tile img { background: #000; object-fit: contain; }
 body.focus-mode .camera-grid.fill-mode .camera-tile img { object-fit: cover; }
@@ -232,7 +226,8 @@ kbd { border: 1px solid var(--border); background: white; border-radius: 5px; pa
 .camera-row-actions { display: flex; gap: 5px; flex-shrink: 0; padding-top: 1px; }
 .camera-form { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
 .camera-form label { display: flex; flex-direction: column; gap: 5px; font-size: 10.5px; font-weight: 700; color: #475569; min-width: 0; }
-.camera-form input { height: 39px; width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 0 11px; background: white; font-size: 12px; outline: none; }
+.camera-form input, .camera-form select { height: 39px; width: 100%; min-width: 0; border: 1px solid var(--border); border-radius: 10px; padding: 0 11px; background: white; font-size: 12px; outline: none; }
+.camera-form select { cursor: pointer; }
 .camera-form input:focus { border-color: var(--blue-2); box-shadow: 0 0 0 3px rgba(37,82,199,.12); }
 .form-actions { display: flex; gap: 8px; margin-top: 3px; }
 .form-actions .btn { flex: 1; }
@@ -241,8 +236,5 @@ kbd { border: 1px solid var(--border); background: white; border-radius: 5px; pa
   .topbar { padding: 14px 16px; }
   .brand p { display: none; }
   .workspace { padding: 12px; }
-  .camera-grid.three { --cols: 1; }
-  .camera-grid.four { --cols: 1; }
-  .camera-grid.six { --cols: 2; }
   .modal-body { grid-template-columns: 1fr; }
 }

@@ -35,8 +35,7 @@ let streamToken = Date.now();
 let openMenuNode = null;
 let openMenuIndex = null;
 let cameraStatus = new Map();
-let cameraAspect = 16 / 9;
-let aspectDetected = false;
+let cameraAspects = new Map();
 
 const conn = document.getElementById('conn');
 const summary = document.getElementById('summary');
@@ -48,45 +47,79 @@ const cameraList = document.getElementById('cameraList');
 const cameraForm = document.getElementById('cameraForm');
 const cameraName = document.getElementById('cameraName');
 const cameraUrl = document.getElementById('cameraUrl');
+const cameraAspectSelect = document.getElementById('cameraAspect');
 const editIndex = document.getElementById('editIndex');
 const saveCameraBtn = document.getElementById('saveCameraBtn');
 
-function noteCameraAspect(image) {
-  if (aspectDetected || !image?.naturalWidth || !image?.naturalHeight) return;
+function aspectForCamera(camera) {
+  if (!camera) return 16 / 9;
+  const manual = String(camera.aspect || '').trim();
+  if (manual && manual !== 'auto') {
+    const [width, height] = manual.split(':').map(Number);
+    if (Number.isFinite(width) && Number.isFinite(height) && width > 0 && height > 0) {
+      return width / height;
+    }
+  }
+  return cameraAspects.get(camera.url) || 16 / 9;
+}
+
+function noteCameraAspect(image, index) {
+  const camera = state.cameras[index];
+  if (!camera?.url || (camera.aspect && camera.aspect !== 'auto')) return;
+  if (!image?.naturalWidth || !image?.naturalHeight) return;
   const ratio = image.naturalWidth / image.naturalHeight;
-  if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 3) return;
-  cameraAspect = ratio;
-  aspectDetected = true;
+  if (!Number.isFinite(ratio) || ratio < 0.3 || ratio > 4) return;
+  const previous = cameraAspects.get(camera.url);
+  if (previous && Math.abs(previous - ratio) < 0.01) return;
+  cameraAspects.set(camera.url, ratio);
   layoutTiles();
 }
 
+function columnsFor(count) {
+  return count === 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : count <= 4 ? 2 : 3;
+}
+
 function layoutTiles() {
-  const count = visibleIndices().length;
-  if (!count) return;
   if (state.focus != null) {
-    grid.style.removeProperty('--cols');
-    grid.style.removeProperty('--tile-w');
-    grid.style.removeProperty('--tile-h');
+    grid.querySelectorAll('.tile-row').forEach(row => {
+      row.style.height = '';
+      row.style.gap = '';
+    });
+    grid.querySelectorAll('.camera-tile').forEach(tile => {
+      tile.style.width = '';
+      tile.style.height = '';
+    });
     return;
   }
-  const cols = count === 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : count <= 4 ? 2 : 3;
-  const rows = Math.ceil(count / cols);
-  const gap = 10;
+  const rows = [...grid.querySelectorAll('.tile-row')];
+  if (!rows.length) return;
   const rect = grid.getBoundingClientRect();
   if (rect.width < 40 || rect.height < 40) return;
-  let tileWidth = (rect.width - gap * (cols - 1)) / cols;
-  let tileHeight = tileWidth / cameraAspect;
-  if (rows * tileHeight + gap * (rows - 1) > rect.height) {
-    tileHeight = (rect.height - gap * (rows - 1)) / rows;
-    tileWidth = tileHeight * cameraAspect;
-  }
-  if (cols * tileWidth + gap * (cols - 1) > rect.width) {
-    tileWidth = (rect.width - gap * (cols - 1)) / cols;
-    tileHeight = tileWidth / cameraAspect;
-  }
-  grid.style.setProperty('--cols', String(cols));
-  grid.style.setProperty('--tile-w', `${Math.max(40, Math.floor(tileWidth))}px`);
-  grid.style.setProperty('--tile-h', `${Math.max(30, Math.floor(tileHeight))}px`);
+  const gap = 10;
+  const data = rows.map(row => {
+    const tiles = [...row.querySelectorAll('.camera-tile')];
+    const aspects = tiles.map(tile => aspectForCamera(state.cameras[Number(tile.dataset.index)]));
+    const aspectSum = aspects.reduce((sum, aspect) => sum + aspect, 0) || tiles.length;
+    return {
+      row,
+      tiles,
+      aspects,
+      maxHeight: (rect.width - gap * (tiles.length - 1)) / aspectSum,
+    };
+  });
+  const heights = data.map(item => Math.max(1, item.maxHeight));
+  const totalHeight = heights.reduce((sum, height) => sum + height, 0) + gap * (rows.length - 1);
+  const scale = totalHeight > rect.height ? rect.height / totalHeight : 1;
+  data.forEach((item, rowIndex) => {
+    const height = Math.max(30, Math.floor(heights[rowIndex] * scale));
+    item.row.style.height = `${height}px`;
+    item.row.style.gap = `${gap}px`;
+    item.tiles.forEach((tile, tileIndex) => {
+      const width = Math.max(30, Math.floor(height * item.aspects[tileIndex]));
+      tile.style.width = `${width}px`;
+      tile.style.height = `${height}px`;
+    });
+  });
 }
 
 function setConn(text, tone) {
@@ -152,7 +185,7 @@ async function refreshStatuses() {
         }
       }
       const image = tile.querySelector('img');
-      if (image && camera.state === 'live') noteCameraAspect(image);
+      if (image && camera.state === 'live') noteCameraAspect(image, camera.index);
       if (image && camera.state === 'live' && image.dataset.failed) {
         delete image.dataset.failed;
         image.classList.remove('stream-failed');
@@ -237,7 +270,7 @@ function tileFor(index) {
       image.dataset.failed = '1';
       image.classList.add('stream-failed');
     });
-    image.addEventListener('load', () => noteCameraAspect(image));
+    image.addEventListener('load', () => noteCameraAspect(image, index));
     tile.append(image);
     tile.append(el('div', { class: 'tile-state hidden' },
       el('span', { class: 'tile-state-title', text: 'Connecting…' }),
@@ -307,7 +340,16 @@ function render() {
     ));
     return;
   }
-  for (const index of indices) grid.append(tileFor(index));
+  if (state.focus != null) {
+    grid.append(tileFor(state.focus));
+  } else {
+    const columns = columnsFor(indices.length);
+    for (let start = 0; start < indices.length; start += columns) {
+      const row = el('div', { class: 'tile-row' });
+      for (const index of indices.slice(start, start + columns)) row.append(tileFor(index));
+      grid.append(row);
+    }
+  }
   requestAnimationFrame(layoutTiles);
   void refreshStatuses();
 }
@@ -352,6 +394,7 @@ function editCamera(index) {
   editIndex.value = String(index);
   cameraName.value = camera.name || '';
   cameraUrl.value = camera.url || '';
+  cameraAspectSelect.value = camera.aspect || 'auto';
   saveCameraBtn.textContent = 'Update camera';
   cameraName.focus();
 }
@@ -360,6 +403,7 @@ function resetForm() {
   editIndex.value = '';
   cameraName.value = '';
   cameraUrl.value = '';
+  cameraAspectSelect.value = 'auto';
   saveCameraBtn.textContent = 'Add camera';
 }
 
@@ -381,7 +425,11 @@ cameraForm.addEventListener('submit', async event => {
   event.preventDefault();
   const url = cameraUrl.value.trim();
   if (!url) { cameraUrl.focus(); return; }
-  const camera = { name: cameraName.value.trim() || `Camera ${state.cameras.length + 1}`, url };
+  const camera = {
+    name: cameraName.value.trim() || `Camera ${state.cameras.length + 1}`,
+    url,
+    aspect: cameraAspectSelect.value || 'auto',
+  };
   const index = Number(editIndex.value);
   if (Number.isInteger(index) && editIndex.value !== '') state.cameras[index] = camera;
   else state.cameras.push(camera);

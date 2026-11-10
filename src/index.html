@@ -72,6 +72,15 @@
           <label>RTSP URL
             <input id="cameraUrl" type="text" placeholder="rtsp://user:password@192.168.1.10:554/stream" autocomplete="off" />
           </label>
+          <label>Aspect ratio
+            <select id="cameraAspect">
+              <option value="auto">Auto-detect</option>
+              <option value="16:9">16:9</option>
+              <option value="4:3">4:3</option>
+              <option value="1:1">1:1</option>
+              <option value="9:16">9:16</option>
+            </select>
+          </label>
           <div class="form-actions">
             <button id="saveCameraBtn" class="btn primary" type="submit">Add camera</button>
             <button id="resetFormBtn" class="btn ghost" type="button">Clear</button>
