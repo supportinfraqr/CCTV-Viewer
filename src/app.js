@@ -35,6 +35,8 @@ let streamToken = Date.now();
 let openMenuNode = null;
 let openMenuIndex = null;
 let cameraStatus = new Map();
+let cameraAspect = 16 / 9;
+let aspectDetected = false;
 
 const conn = document.getElementById('conn');
 const summary = document.getElementById('summary');
@@ -48,6 +50,44 @@ const cameraName = document.getElementById('cameraName');
 const cameraUrl = document.getElementById('cameraUrl');
 const editIndex = document.getElementById('editIndex');
 const saveCameraBtn = document.getElementById('saveCameraBtn');
+
+function noteCameraAspect(image) {
+  if (aspectDetected || !image?.naturalWidth || !image?.naturalHeight) return;
+  const ratio = image.naturalWidth / image.naturalHeight;
+  if (!Number.isFinite(ratio) || ratio < 0.5 || ratio > 3) return;
+  cameraAspect = ratio;
+  aspectDetected = true;
+  layoutTiles();
+}
+
+function layoutTiles() {
+  const count = visibleIndices().length;
+  if (!count) return;
+  if (state.focus != null) {
+    grid.style.removeProperty('--cols');
+    grid.style.removeProperty('--tile-w');
+    grid.style.removeProperty('--tile-h');
+    return;
+  }
+  const cols = count === 1 ? 1 : count === 2 ? 2 : count === 3 ? 3 : count <= 4 ? 2 : 3;
+  const rows = Math.ceil(count / cols);
+  const gap = 10;
+  const rect = grid.getBoundingClientRect();
+  if (rect.width < 40 || rect.height < 40) return;
+  let tileWidth = (rect.width - gap * (cols - 1)) / cols;
+  let tileHeight = tileWidth / cameraAspect;
+  if (rows * tileHeight + gap * (rows - 1) > rect.height) {
+    tileHeight = (rect.height - gap * (rows - 1)) / rows;
+    tileWidth = tileHeight * cameraAspect;
+  }
+  if (cols * tileWidth + gap * (cols - 1) > rect.width) {
+    tileWidth = (rect.width - gap * (cols - 1)) / cols;
+    tileHeight = tileWidth / cameraAspect;
+  }
+  grid.style.setProperty('--cols', String(cols));
+  grid.style.setProperty('--tile-w', `${Math.max(40, Math.floor(tileWidth))}px`);
+  grid.style.setProperty('--tile-h', `${Math.max(30, Math.floor(tileHeight))}px`);
+}
 
 function setConn(text, tone) {
   conn.textContent = text;
@@ -112,6 +152,7 @@ async function refreshStatuses() {
         }
       }
       const image = tile.querySelector('img');
+      if (image && camera.state === 'live') noteCameraAspect(image);
       if (image && camera.state === 'live' && image.dataset.failed) {
         delete image.dataset.failed;
         image.classList.remove('stream-failed');
@@ -196,6 +237,7 @@ function tileFor(index) {
       image.dataset.failed = '1';
       image.classList.add('stream-failed');
     });
+    image.addEventListener('load', () => noteCameraAspect(image));
     tile.append(image);
     tile.append(el('div', { class: 'tile-state hidden' },
       el('span', { class: 'tile-state-title', text: 'Connecting…' }),
@@ -266,6 +308,7 @@ function render() {
     return;
   }
   for (const index of indices) grid.append(tileFor(index));
+  requestAnimationFrame(layoutTiles);
   void refreshStatuses();
 }
 
@@ -386,6 +429,9 @@ async function toggleFullscreen() {
 document.addEventListener('fullscreenchange', () => {
   document.getElementById('fullscreenBtn').textContent = document.fullscreenElement ? 'Exit full screen' : 'Full screen';
 });
+
+window.addEventListener('resize', () => requestAnimationFrame(layoutTiles));
+new ResizeObserver(() => requestAnimationFrame(layoutTiles)).observe(grid);
 
 render();
 void waitForServer();
