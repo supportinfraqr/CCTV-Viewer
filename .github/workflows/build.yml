@@ -1,0 +1,89 @@
+name: Build Windows installer
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - 'cctv-tauri-v*'
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Python build dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller opencv-python-headless
+
+      - name: Build local video engine
+        run: |
+          set -o pipefail
+          (python -m PyInstaller --noconfirm --clean --onefile --name cctv-server \
+            --distpath dist-sidecar \
+            --workpath build-sidecar \
+            --specpath build-sidecar \
+            sidecar/cctv_server.py 2>&1) | tee sidecar-build.log
+          mkdir -p src-tauri/binaries
+          cp dist-sidecar/cctv-server.exe src-tauri/binaries/cctv-server-x86_64-pc-windows-msvc.exe
+          ls -lh src-tauri/binaries/
+
+      - name: Install desktop dependencies
+        run: npm ci
+
+      - name: Build Windows installer
+        run: |
+          set -o pipefail
+          (npm run build -- --verbose --bundles nsis 2>&1) | tee tauri-build.log
+
+      - name: Collect installer
+        run: |
+          mkdir -p release
+          INSTALLER=$(find src-tauri/target/release/bundle/nsis -name '*.exe' -type f | head -n 1)
+          if [ -z "$INSTALLER" ]; then
+            echo "No NSIS installer was produced." >&2
+            exit 1
+          fi
+          cp "$INSTALLER" release/CCTV-Viewer-Setup.exe
+          (cd release && sha256sum CCTV-Viewer-Setup.exe > CCTV-Viewer-Setup.exe.sha256)
+          ls -lh release
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: CCTV-Viewer-Windows
+          path: |
+            release/CCTV-Viewer-Setup.exe
+            release/CCTV-Viewer-Setup.exe.sha256
+            *-build.log
+          if-no-files-found: error
+
+      - name: Publish GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/CCTV-Viewer-Setup.exe
+            release/CCTV-Viewer-Setup.exe.sha256
+          generate_release_notes: true

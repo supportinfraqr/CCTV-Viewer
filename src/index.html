@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>CCTV Viewer</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24"><path d="M4 7.5h3l1.4-2h7.2l1.4 2h3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
+      </div>
+      <div>
+        <h1>CCTV Viewer</h1>
+        <p>Local RTSP monitor · video stays on this PC</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <span id="conn" class="status-pill connecting">Starting…</span>
+      <button id="fullscreenBtn" class="btn ghost" type="button">Full screen</button>
+      <button id="addBtn" class="btn primary" type="button">+ Add camera</button>
+    </div>
+  </header>
+
+  <main class="workspace">
+    <section class="toolbar card">
+      <div class="layout-group">
+        <span class="toolbar-label">Layout</span>
+        <div id="layoutButtons" class="segmented" role="group" aria-label="Camera layout"></div>
+      </div>
+      <div class="toolbar-right">
+        <span id="summary" class="muted">No cameras configured</span>
+        <button id="manageBtn" class="btn ghost" type="button">Manage cameras</button>
+      </div>
+    </section>
+
+    <section id="grid" class="camera-grid" aria-label="Camera grid">
+      <div class="empty-state card">
+        <div class="empty-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24"><path d="M4 7.5h3l1.4-2h7.2l1.4 2h3a2 2 0 0 1 2 2v8.5a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9.5a2 2 0 0 1 2-2Z"/><circle cx="12" cy="13.5" r="3.5"/></svg>
+        </div>
+        <h2>No cameras yet</h2>
+        <p>Add your first RTSP camera to start watching.</p>
+        <button class="btn primary" type="button" data-action="add">Add camera</button>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>Click a camera to maximize it.</span>
+      <span>Press <kbd>Esc</kbd> to return to the grid, <kbd>F11</kbd> for full screen.</span>
+    </footer>
+  </main>
+
+  <div id="modalBackdrop" class="modal-backdrop hidden">
+    <section id="modal" class="modal card" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
+      <header class="modal-head">
+        <div>
+          <p class="eyebrow">Camera configuration</p>
+          <h2 id="modalTitle">Manage cameras</h2>
+        </div>
+        <button id="closeModalBtn" class="icon-btn" type="button" aria-label="Close">×</button>
+      </header>
+      <div class="modal-body">
+        <div id="cameraList" class="camera-list"></div>
+        <form id="cameraForm" class="camera-form">
+          <input type="hidden" id="editIndex" />
+          <label>Camera name
+            <input id="cameraName" type="text" placeholder="Main gate" autocomplete="off" />
+          </label>
+          <label>RTSP URL
+            <input id="cameraUrl" type="text" placeholder="rtsp://user:password@192.168.1.10:554/stream" autocomplete="off" />
+          </label>
+          <div class="form-actions">
+            <button id="saveCameraBtn" class="btn primary" type="submit">Add camera</button>
+            <button id="resetFormBtn" class="btn ghost" type="button">Clear</button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
