@@ -19,6 +19,7 @@
     </div>
     <div class="top-actions">
       <span id="conn" class="status-pill connecting">Starting…</span>
+      <button id="updateBtn" class="btn ghost" type="button">Update</button>
       <button id="fullscreenBtn" class="btn ghost" type="button">Full screen</button>
       <button id="addBtn" class="btn primary" type="button">+ Add camera</button>
     </div>
@@ -40,6 +41,8 @@
       </div>
     </section>
 
+    <section id="updateBanner" class="update-banner hidden" aria-live="polite"></section>
+
     <section id="grid" class="camera-grid" aria-label="Camera grid">
       <div class="empty-state card">
         <div class="empty-icon" aria-hidden="true">
@@ -52,7 +55,7 @@
     </section>
 
     <footer class="footer">
-      <span>Click a camera to maximize it.</span>
+      <span>Click a camera to maximize it. Scroll to zoom; drag to pan when zoomed.</span>
       <span>Press <kbd>Esc</kbd> to return to the grid, <kbd>F11</kbd> for full screen.</span>
     </footer>
   </main>

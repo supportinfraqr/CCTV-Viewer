@@ -4,13 +4,23 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
-use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
+use tauri::{AppHandle, Manager, RunEvent, State, WindowEvent};
 use tauri_plugin_shell::process::{CommandChild, CommandEvent};
 use tauri_plugin_shell::ShellExt;
+use tauri_plugin_updater::{Update, UpdaterExt};
 
 struct ServerProcess {
     child: Mutex<Option<CommandChild>>,
     stopping: AtomicBool,
+}
+
+struct PendingUpdate(Mutex<Option<Update>>);
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct UpdateInfo {
+    version: String,
+    current_version: String,
 }
 
 fn start_server(app: AppHandle) {
@@ -73,6 +83,12 @@ fn stop_server(app: &AppHandle) {
     stop_stale_servers();
 }
 
+fn restart_server(app: &AppHandle) {
+    let state = app.state::<ServerProcess>();
+    state.stopping.store(false, Ordering::SeqCst);
+    start_server(app.clone());
+}
+
 fn stop_stale_servers() {
     #[cfg(target_os = "windows")]
     {
@@ -98,14 +114,70 @@ fn stop_stale_servers() {
     }
 }
 
+#[tauri::command]
+fn app_version(app: AppHandle) -> String {
+    app.package_info().version.to_string()
+}
+
+#[tauri::command]
+async fn check_update(
+    app: AppHandle,
+    pending: State<'_, PendingUpdate>,
+) -> Result<Option<UpdateInfo>, String> {
+    let update = app
+        .updater()
+        .map_err(|error| error.to_string())?
+        .check()
+        .await
+        .map_err(|error| error.to_string())?;
+    let info = update.as_ref().map(|update| UpdateInfo {
+        version: update.version.clone(),
+        current_version: update.current_version.clone(),
+    });
+    *pending.0.lock().map_err(|error| error.to_string())? = update;
+    Ok(info)
+}
+
+#[tauri::command]
+async fn install_update(
+    app: AppHandle,
+    pending: State<'_, PendingUpdate>,
+) -> Result<(), String> {
+    let Some(update) = pending.0.lock().map_err(|error| error.to_string())?.take() else {
+        return Err("No update is ready to install.".into());
+    };
+    let bytes = update
+        .download(|_, _| {}, || {})
+        .await
+        .map_err(|error| format!("Update download failed: {error}"))?;
+    stop_server(&app);
+    match update.install(&bytes) {
+        Ok(()) => {
+            app.restart();
+            Ok(())
+        }
+        Err(error) => {
+            restart_server(&app);
+            Err(format!("Update installation failed: {error}"))
+        }
+    }
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
+        .invoke_handler(tauri::generate_handler![
+            app_version,
+            check_update,
+            install_update
+        ])
         .setup(|app| {
             app.manage(ServerProcess {
                 child: Mutex::new(None),
                 stopping: AtomicBool::new(false),
             });
+            app.manage(PendingUpdate(Mutex::new(None)));
             start_server(app.handle().clone());
             Ok(())
         })

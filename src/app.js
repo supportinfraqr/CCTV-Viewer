@@ -37,6 +37,7 @@ let openMenuNode = null;
 let openMenuIndex = null;
 let cameraStatus = new Map();
 let cameraAspects = new Map();
+let cameraZooms = new Map();
 
 const conn = document.getElementById('conn');
 const summary = document.getElementById('summary');
@@ -50,6 +51,8 @@ const cameraForm = document.getElementById('cameraForm');
 const cameraName = document.getElementById('cameraName');
 const cameraUrl = document.getElementById('cameraUrl');
 const cameraAspectSelect = document.getElementById('cameraAspect');
+const updateBtn = document.getElementById('updateBtn');
+const updateBanner = document.getElementById('updateBanner');
 const editIndex = document.getElementById('editIndex');
 const saveCameraBtn = document.getElementById('saveCameraBtn');
 
@@ -75,6 +78,42 @@ function noteCameraAspect(image, index) {
   if (previous && Math.abs(previous - ratio) < 0.01) return;
   cameraAspects.set(camera.url, ratio);
   layoutTiles();
+}
+
+function zoomFor(index) {
+  const camera = state.cameras[index];
+  return (camera?.url && cameraZooms.get(camera.url)) || { scale: 1, x: 0, y: 0 };
+}
+
+function saveZoom(index, zoom) {
+  const camera = state.cameras[index];
+  if (camera?.url) cameraZooms.set(camera.url, { ...zoom });
+}
+
+function applyZoom(image, index) {
+  if (!image) return;
+  const zoom = zoomFor(index);
+  image.style.transformOrigin = 'center center';
+  image.style.transform = `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`;
+}
+
+function zoomLabelText(index) {
+  return `${Math.round(zoomFor(index).scale * 100)}%`;
+}
+
+function adjustZoom(index, delta) {
+  const tile = grid.querySelector(`.camera-tile[data-index="${index}"]`);
+  if (!tile) return;
+  const zoom = zoomFor(index);
+  zoom.scale = Math.max(1, Math.min(6, Math.round((zoom.scale + delta) * 100) / 100));
+  if (zoom.scale === 1) {
+    zoom.x = 0;
+    zoom.y = 0;
+  }
+  saveZoom(index, zoom);
+  applyZoom(tile.querySelector('img'), index);
+  const label = tile.querySelector('.zoom-label');
+  if (label) label.textContent = zoomLabelText(index);
 }
 
 function columnsFor(count) {
@@ -282,6 +321,52 @@ function tileFor(index) {
     if (openMenuIndex === index) closeTileMenu();
     else openTileMenu(index, tile);
   });
+  if (hasUrl) {
+    tile.addEventListener('wheel', event => {
+      event.preventDefault();
+      adjustZoom(index, event.deltaY < 0 ? 0.25 : -0.25);
+    }, { passive: false });
+    let drag = null;
+    let dragMoved = false;
+    tile.addEventListener('click', event => {
+      if (!dragMoved) return;
+      dragMoved = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+    }, true);
+    tile.addEventListener('pointerdown', event => {
+      const zoom = zoomFor(index);
+      if (zoom.scale <= 1 || event.button !== 0 || event.target.closest('button') || event.target.closest('.tile-menu')) return;
+      drag = { startX: event.clientX, startY: event.clientY, originX: zoom.x, originY: zoom.y };
+      dragMoved = false;
+      tile.setPointerCapture(event.pointerId);
+    });
+    tile.addEventListener('pointermove', event => {
+      if (!drag) return;
+      const dx = event.clientX - drag.startX;
+      const dy = event.clientY - drag.startY;
+      if (Math.abs(dx) + Math.abs(dy) > 2) dragMoved = true;
+      if (!dragMoved) return;
+      const zoom = zoomFor(index);
+      const maxX = (zoom.scale - 1) * tile.clientWidth / 2;
+      const maxY = (zoom.scale - 1) * tile.clientHeight / 2;
+      zoom.x = Math.max(-maxX, Math.min(maxX, drag.originX + dx));
+      zoom.y = Math.max(-maxY, Math.min(maxY, drag.originY + dy));
+      saveZoom(index, zoom);
+      applyZoom(tile.querySelector('img'), index);
+    });
+    const endDrag = () => { drag = null; };
+    tile.addEventListener('pointerup', endDrag);
+    tile.addEventListener('pointercancel', endDrag);
+  }
+  const zoomControls = state.focus === index && hasUrl
+    ? el('div', { class: 'zoom-controls' },
+        el('button', { class: 'zoom-btn', type: 'button', title: 'Zoom out', text: '−', onclick: event => { event.stopPropagation(); adjustZoom(index, -0.25); } }),
+        el('span', { class: 'zoom-label', text: zoomLabelText(index) }),
+        el('button', { class: 'zoom-btn', type: 'button', title: 'Zoom in', text: '+', onclick: event => { event.stopPropagation(); adjustZoom(index, 0.25); } }),
+        el('button', { class: 'zoom-btn zoom-reset', type: 'button', title: 'Reset zoom', text: '1×', onclick: event => { event.stopPropagation(); const zoom = { scale: 1, x: 0, y: 0 }; saveZoom(index, zoom); applyZoom(tile.querySelector('img'), index); const label = tile.querySelector('.zoom-label'); if (label) label.textContent = '100%'; } }),
+      )
+    : null;
   const back = state.focus === index
     ? el('button', { class: 'tile-back', type: 'button', text: 'Back to grid', onclick: event => { event.stopPropagation(); state.focus = null; save(); render(); } })
     : null;
@@ -290,7 +375,7 @@ function tileFor(index) {
       el('span', { class: 'stream-dot' }),
       el('span', { class: 'tile-title', text: camera ? name(camera) : `Camera ${index + 1}` }),
     ),
-    el('div', { class: 'tile-actions' }, back, more),
+    el('div', { class: 'tile-actions' }, zoomControls, back, more),
   ));
   if (hasUrl) {
     const image = el('img', {
@@ -304,6 +389,7 @@ function tileFor(index) {
     });
     image.addEventListener('load', () => noteCameraAspect(image, index));
     tile.append(image);
+    applyZoom(image, index);
     tile.append(el('div', { class: 'tile-state hidden' },
       el('span', { class: 'tile-state-title', text: 'Connecting…' }),
       el('span', { class: 'tile-state-detail', text: 'Waiting for the camera stream…' }),
@@ -339,6 +425,7 @@ function openTileMenu(index, tile) {
     el('button', { class: 'menu-action', type: 'button', text: 'Edit camera', onclick: () => { closeTileMenu(); openModal(index); } }),
     el('button', { class: 'menu-action', type: 'button', text: state.focus === index ? 'Back to grid' : 'Maximize camera', onclick: () => { closeTileMenu(); state.focus = state.focus === index ? null : index; save(); render(); } }),
     el('button', { class: 'menu-action', type: 'button', text: state.fitMode === 'fill' ? 'Fit full camera view' : 'Fill screen', onclick: () => { closeTileMenu(); state.fitMode = state.fitMode === 'fill' ? 'contain' : 'fill'; save(); render(); } }),
+    el('button', { class: 'menu-action', type: 'button', text: 'Reset zoom', onclick: () => { closeTileMenu(); saveZoom(index, { scale: 1, x: 0, y: 0 }); adjustZoom(index, 0); } }),
     el('button', { class: 'menu-action danger', type: 'button', text: 'Remove camera', onclick: () => { closeTileMenu(); void deleteCamera(index); } }),
   ));
   tile.append(menu);
@@ -480,6 +567,83 @@ document.getElementById('closeModalBtn').addEventListener('click', closeModal);
 document.getElementById('resetFormBtn').addEventListener('click', resetForm);
 modalBackdrop.addEventListener('click', event => { if (event.target === modalBackdrop) closeModal(); });
 
+let updateBusy = false;
+
+function tauriBridge() {
+  return window.__TAURI__ || null;
+}
+
+function renderUpdateBanner(message) {
+  updateBanner.replaceChildren();
+  if (!message) {
+    updateBanner.classList.add('hidden');
+    return;
+  }
+  updateBanner.classList.remove('hidden');
+  const action = el('button', { class: 'btn primary', type: 'button', text: message.action || 'OK' });
+  action.addEventListener('click', message.onAction || (() => renderUpdateBanner(null)));
+  updateBanner.append(el('div', { class: 'update-inner' },
+    el('div', {},
+      el('p', { class: 'update-title', text: message.title }),
+      el('p', { class: 'update-body', text: message.body || '' }),
+    ),
+    el('div', { class: 'update-actions' }, action),
+  ));
+}
+
+async function checkForUpdates(manual = false) {
+  const bridge = tauriBridge();
+  if (!bridge?.core?.invoke) {
+    if (manual) renderUpdateBanner({ title: 'Update check unavailable', body: 'Run the installed desktop app to check for updates.', action: 'Close' });
+    return;
+  }
+  if (manual) {
+    updateBtn.disabled = true;
+    updateBtn.textContent = 'Checking…';
+  }
+  try {
+    const update = await bridge.core.invoke('check_update');
+    if (update) {
+      renderUpdateBanner({
+        title: `Update available: ${update.version}`,
+        body: `Installed: ${update.currentVersion}. Download and install, then the app restarts automatically.`,
+        action: 'Download & install',
+        onAction: () => void installUpdate(),
+      });
+    } else if (manual) {
+      renderUpdateBanner({ title: 'You are up to date', body: 'This is the latest available version.', action: 'Close' });
+    }
+  } catch (error) {
+    if (manual) renderUpdateBanner({ title: 'Update check failed', body: error?.message || String(error), action: 'Close' });
+  } finally {
+    if (manual) {
+      updateBtn.disabled = false;
+      updateBtn.textContent = 'Update';
+    }
+  }
+}
+
+async function installUpdate() {
+  if (updateBusy) return;
+  const bridge = tauriBridge();
+  if (!bridge?.core?.invoke) return;
+  updateBusy = true;
+  renderUpdateBanner({
+    title: 'Installing update…',
+    body: 'The signed update is downloading. The app will restart when it is ready.',
+    action: 'Installing…',
+  });
+  try {
+    await bridge.core.invoke('install_update');
+  } catch (error) {
+    updateBusy = false;
+    renderUpdateBanner({ title: 'Update failed', body: error?.message || String(error), action: 'Close' });
+  }
+}
+
+updateBtn.addEventListener('click', () => void checkForUpdates(true));
+setTimeout(() => void checkForUpdates(false), 4000);
+
 document.getElementById('fullscreenBtn').addEventListener('click', toggleFullscreen);
 document.addEventListener('click', event => {
   if (!openMenuNode) return;
@@ -493,6 +657,11 @@ document.addEventListener('keydown', event => {
     if (openMenuNode) { closeTileMenu(); return; }
     if (!modalBackdrop.classList.contains('hidden')) { closeModal(); return; }
     if (state.focus != null) { state.focus = null; save(); render(); }
+  }
+  if (state.focus != null) {
+    if (event.key === '+' || event.key === '=') { event.preventDefault(); adjustZoom(state.focus, 0.25); }
+    else if (event.key === '-') { event.preventDefault(); adjustZoom(state.focus, -0.25); }
+    else if (event.key === '0') { event.preventDefault(); saveZoom(state.focus, { scale: 1, x: 0, y: 0 }); adjustZoom(state.focus, 0); }
   }
   if (event.key === 'F11') {
     event.preventDefault();

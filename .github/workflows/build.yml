@@ -53,6 +53,9 @@ jobs:
         run: npm ci
 
       - name: Build Windows installer
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           set -o pipefail
           (npm run build -- --verbose --bundles nsis 2>&1) | tee tauri-build.log
@@ -66,8 +69,35 @@ jobs:
             exit 1
           fi
           cp "$INSTALLER" release/CCTV-Viewer-Setup.exe
+          SIGNATURE=$(find src-tauri/target/release/bundle/nsis -name '*.exe.sig' -type f | head -n 1)
+          if [ -z "$SIGNATURE" ]; then
+            echo "No updater signature was produced." >&2
+            exit 1
+          fi
+          cp "$SIGNATURE" release/CCTV-Viewer-Setup.exe.sig
           (cd release && sha256sum CCTV-Viewer-Setup.exe > CCTV-Viewer-Setup.exe.sha256)
+          VERSION=$(python3 -c "import json; print(json.load(open('package.json'))['version'])")
+          URL="https://github.com/supportinfraqr/CCTV-Viewer/releases/download/cctv-tauri-v${VERSION}/CCTV-Viewer-Setup.exe"
+          SIGNATURE_TEXT=$(cat release/CCTV-Viewer-Setup.exe.sig)
+          VERSION="$VERSION" URL="$URL" SIGNATURE_TEXT="$SIGNATURE_TEXT" python3 - <<'PY'
+          import json, os
+          from datetime import datetime, timezone
+          manifest = {
+              "version": os.environ["VERSION"],
+              "notes": "CCTV Viewer update",
+              "pub_date": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+              "platforms": {
+                  "windows-x86_64": {
+                      "signature": os.environ["SIGNATURE_TEXT"],
+                      "url": os.environ["URL"],
+                  }
+              },
+          }
+          with open("release/latest.json", "w", encoding="utf-8") as handle:
+              json.dump(manifest, handle, indent=2)
+          PY
           ls -lh release
+          cat release/latest.json
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
@@ -76,6 +106,7 @@ jobs:
           path: |
             release/CCTV-Viewer-Setup.exe
             release/CCTV-Viewer-Setup.exe.sha256
+            release/latest.json
             *-build.log
           if-no-files-found: error
 
@@ -86,4 +117,5 @@ jobs:
           files: |
             release/CCTV-Viewer-Setup.exe
             release/CCTV-Viewer-Setup.exe.sha256
+            release/latest.json
           generate_release_notes: true
