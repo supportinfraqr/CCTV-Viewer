@@ -1,11 +1,12 @@
 const API = 'http://127.0.0.1:8765';
 const STORAGE_KEY = 'cctv-viewer.config.v1';
-const DEFAULT = { layout: 4, cameras: [], focus: null, fitMode: 'contain' };
+const DEFAULT = { layout: 4, cameras: [], focus: null, fitMode: 'fill', uiVersion: 2 };
 
 function load() {
   try {
     const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || '{}');
-    return { ...DEFAULT, ...saved, cameras: Array.isArray(saved.cameras) ? saved.cameras : [] };
+    const fitMode = (saved.uiVersion || 1) < 2 ? 'fill' : (saved.fitMode || 'fill');
+    return { ...DEFAULT, ...saved, fitMode, uiVersion: 2, cameras: Array.isArray(saved.cameras) ? saved.cameras : [] };
   } catch {
     return { ...DEFAULT };
   }
@@ -41,6 +42,7 @@ const conn = document.getElementById('conn');
 const summary = document.getElementById('summary');
 const grid = document.getElementById('grid');
 const layoutButtons = document.getElementById('layoutButtons');
+const viewButtons = document.getElementById('viewButtons');
 const modalBackdrop = document.getElementById('modalBackdrop');
 const modalTitle = document.getElementById('modalTitle');
 const cameraList = document.getElementById('cameraList');
@@ -96,6 +98,20 @@ function layoutTiles() {
   const rect = grid.getBoundingClientRect();
   if (rect.width < 40 || rect.height < 40) return;
   const gap = 10;
+  if (state.fitMode === 'fill') {
+    const columns = Math.max(...rows.map(row => row.querySelectorAll('.camera-tile').length));
+    const tileWidth = Math.max(40, Math.floor((rect.width - gap * (columns - 1)) / columns));
+    const tileHeight = Math.max(30, Math.floor((rect.height - gap * (rows.length - 1)) / rows.length));
+    rows.forEach(row => {
+      row.style.height = `${tileHeight}px`;
+      row.style.gap = `${gap}px`;
+      row.querySelectorAll('.camera-tile').forEach(tile => {
+        tile.style.width = `${tileWidth}px`;
+        tile.style.height = `${tileHeight}px`;
+      });
+    });
+    return;
+  }
   const data = rows.map(row => {
     const tiles = [...row.querySelectorAll('.camera-tile')];
     const aspects = tiles.map(tile => aspectForCamera(state.cameras[Number(tile.dataset.index)]));
@@ -222,6 +238,22 @@ function renderLayoutButtons() {
   }
 }
 
+function renderViewButtons() {
+  viewButtons.replaceChildren();
+  for (const [mode, label] of [['fill', 'Fill'], ['contain', 'Fit']]) {
+    viewButtons.append(el('button', {
+      type: 'button',
+      class: state.fitMode === mode ? 'active' : '',
+      text: label,
+      onclick: () => {
+        state.fitMode = mode;
+        save();
+        render();
+      },
+    }));
+  }
+}
+
 function tileFor(index) {
   const camera = state.cameras[index];
   const hasUrl = Boolean(camera?.url);
@@ -306,7 +338,7 @@ function openTileMenu(index, tile) {
   menu.append(el('div', { class: 'tile-menu-actions' },
     el('button', { class: 'menu-action', type: 'button', text: 'Edit camera', onclick: () => { closeTileMenu(); openModal(index); } }),
     el('button', { class: 'menu-action', type: 'button', text: state.focus === index ? 'Back to grid' : 'Maximize camera', onclick: () => { closeTileMenu(); state.focus = state.focus === index ? null : index; save(); render(); } }),
-    el('button', { class: 'menu-action', type: 'button', text: state.fitMode === 'fill' ? 'Fit full camera view' : 'Fill the tile', onclick: () => { closeTileMenu(); state.fitMode = state.fitMode === 'fill' ? 'contain' : 'fill'; save(); render(); } }),
+    el('button', { class: 'menu-action', type: 'button', text: state.fitMode === 'fill' ? 'Fit full camera view' : 'Fill screen', onclick: () => { closeTileMenu(); state.fitMode = state.fitMode === 'fill' ? 'contain' : 'fill'; save(); render(); } }),
     el('button', { class: 'menu-action danger', type: 'button', text: 'Remove camera', onclick: () => { closeTileMenu(); void deleteCamera(index); } }),
   ));
   tile.append(menu);
@@ -322,6 +354,7 @@ function render() {
   closeTileMenu();
   document.body.classList.toggle('focus-mode', state.focus != null);
   renderLayoutButtons();
+  renderViewButtons();
   const count = state.cameras.length;
   summary.textContent = count
     ? `${count} camera${count === 1 ? '' : 's'} configured · showing ${state.focus != null ? 1 : Math.min(state.layout, count)}`
